@@ -1,0 +1,205 @@
+RAPPORT – Fonctionnement du site (MovieManager) + lien avec le code
+==================================================================
+
+But du document
+---------------
+Expliquer le fonctionnement global du site (pages, navigation, parcours),
+et faire le lien direct entre:
+- ce que l’utilisateur fait (clic / saisie)
+- les éléments HTML (id / data-*)
+- le code JavaScript dans `app.js` (fonctions)
+- les données (localStorage)
+
+
+1) Pages du site
+----------------
+
+A) `index.html` (Connexion)
+Rôle:
+- Authentifier l’utilisateur (simple).
+
+Éléments HTML importants:
+- Formulaire: `#loginForm`
+- Champs: `#username`, `#password`
+- Zone d’erreur: `#loginError`
+
+Code JS lié (dans `app.js`):
+- `initLoginPage()`:
+  - écoute `submit` sur `#loginForm`
+  - vérifie `admin/admin`
+  - si OK: enregistre `currentUser` et redirige `dashboard.html`
+  - si KO: affiche l’erreur dans `#loginError`
+
+Données localStorage:
+- `currentUser` (créée à la connexion)
+
+
+B) `dashboard.html` (Dashboard)
+Rôle:
+- Afficher des statistiques et des graphiques (Chart.js).
+
+Éléments HTML importants:
+- Stats: `#statTotalMovies`, `#statPopularMovies`, `#statArchivedMovies`, `#statFavoriteMovies`, `#statAverageRating`
+- Graphiques (canvas):
+  - `#chartByYear`
+  - `#chartLanguages`
+  - `#chartEvolution`
+  - `#chartFavoritesArchived`
+  - `#chartRatings`
+- Select langue: `#languageSelect`
+- Bouton logout: `#logoutBtn`
+
+Code JS lié (dans `app.js`):
+- `initDashboardPage()`:
+  - initialise la langue via `initLanguageSelector(loadDashboard)`
+  - appelle `loadDashboard()`
+- `loadDashboard()`:
+  - récupère les films TMDB (popular) + les films custom
+  - enlève les films archivés
+  - appelle `updateDashboardStats(all)` + `renderDashboardCharts(all)`
+- `updateDashboardStats(movies)`:
+  - met à jour les compteurs
+- `renderDashboardCharts(movies)`:
+  - calcule les datasets
+  - crée les charts
+  - appelle `destroyCharts()` avant de recréer (évite doublons quand on change de langue)
+
+Données localStorage utilisées:
+- `customMovies` (films ajoutés par l’utilisateur)
+- `favorites` (liste d’IDs favoris)
+- `archived` (liste d’IDs archivés)
+
+
+C) `movies.html` (Films)
+Rôle:
+- Afficher les films populaires (TMDB) + films personnalisés (CRUD).
+- Rechercher, paginer, marquer favoris, archiver, voir détails, exporter PDF.
+
+Modes via URL:
+- `movies.html` : mode normal (films non archivés)
+- `movies.html?favorites=true` : mode favoris
+- `movies.html?archived=true` : mode archives
+
+Éléments HTML importants:
+- Titre page: `#pageTitle`
+- Zone recherche: `#searchInput`
+- Grille films: `#moviesContainer`
+- Pagination: `#pagination`
+- Bouton “Ajouter”: `#addMovieBtn`
+
+Modal CRUD (ajout/modif):
+- Modal: `#movieModal`
+- Form: `#movieForm`
+- Champs:
+  - `#movieId` (hidden)
+  - `#movieTitle`
+  - `#movieDescription`
+  - `#movieReleaseDate`
+  - `#movieRating`
+  - `#movieLanguage`
+  - `#moviePoster`
+- Bouton save: `#saveMovieBtn`
+- Titre modal: `#modalTitle`
+
+Modal détails:
+- Modal: `#movieDetailModal`
+- Champs:
+  - `#detailMovieTitle`
+  - `#detailMoviePoster`
+  - `#detailMovieDescription`
+  - `#detailMovieReleaseDate`
+  - `#detailMovieRating`
+  - `#detailMovieLanguage`
+  - `#detailMovieId`
+- Bouton export PDF: `#exportPdfBtn`
+
+Code JS lié (dans `app.js`):
+- `initMoviesPage()`:
+  - lit le mode URL: `readMoviesModeFromUrl()`
+  - initialise langue: `initLanguageSelector(...)`
+  - installe les listeners (recherche, pagination, actions sur cartes, save, export PDF)
+  - appelle `loadMovies()`
+
+- `loadMovies()`:
+  - si recherche → `searchMovies(q, page)` sinon `fetchPopularMovies(page)`
+  - fusionne avec `store.customMovies`
+  - applique filtres favoris/archives/normal
+  - affiche via `renderMoviesGrid(all)` + `renderPagination()`
+
+- Affichage:
+  - `renderMoviesGrid(movies)` génère les cartes + boutons actions (`data-action`, `data-id`)
+  - `renderPagination()` génère “Précédent / Page X / Suivant”
+
+- Actions (films):
+  - Favoris: `toggleFavorite(id)` (met à jour `favorites`)
+  - Archive: `archiveMovie(id)` (met à jour `archived`)
+  - Désarchive: `unarchiveMovie(id)` (met à jour `archived`)
+  - Delete: `deleteMovie(id)` (supprime du custom + nettoie favoris/archives)
+  - Edit: `openEditModal(id)` (remplit le formulaire + ouvre modal)
+  - Détails: `viewDetails(id)` (remplit modal détails + ouvre)
+
+- CRUD:
+  - `saveMovieFromForm()`:
+    - CREATE si pas de `movieId`
+    - UPDATE si `movieId` existe
+    - sauvegarde dans `customMovies`
+
+- PDF:
+  - `exportDetailPdf()`:
+    - lit l’id depuis `#exportPdfBtn.dataset.movieId`
+    - génère un PDF avec jsPDF et le télécharge
+
+Données localStorage utilisées:
+- `customMovies`, `favorites`, `archived`
+
+
+2) Navigation + UI commune (sidebar, logout, langue)
+----------------------------------------------------
+Sidebar:
+- `initSidebarToggle()` gère l’ouverture/fermeture sur mobile (bouton `#sidebarToggle`).
+
+Langue:
+- `initLanguageSelector(onChange)`:
+  - écoute `change` de `#languageSelect`
+  - met à jour `state.lang` + localStorage
+  - applique i18n sur la page
+  - relance `onChange` (recharge movies/dashboard)
+
+Logout:
+- `initLogout()`:
+  - écoute `click` sur `#logoutBtn`
+  - supprime `currentUser` et redirige `index.html`
+
+
+3) Sécurité / accès (auth)
+--------------------------
+Au démarrage, `enforceAuth()` vérifie:
+- si pas de `currentUser` et qu’on n’est pas sur la page de login → redirection.
+
+
+4) Le “moteur” du site: le point d’entrée
+-----------------------------------------
+Dans `app.js`:
+- `document.addEventListener("DOMContentLoaded", ...)`
+
+Ce bloc:
+1) appelle `enforceAuth()`
+2) initialise la sidebar
+3) détecte la page courante (`index.html`, `dashboard.html`, `movies.html`)
+4) lance la fonction d’initialisation correspondante:
+   - `initLoginPage()`
+   - `initDashboardPage()`
+   - `initMoviesPage()`
+
+
+5) Résumé des fonctionnalités demandées (check-list)
+----------------------------------------------------
+- CRUD (LocalStorage): create/update/delete (films custom) + favoris + archives
+- Dashboard: statistiques + graphiques Chart.js
+- DOM: listeners + event delegation + mise à jour dynamique
+- Async: fetch + async/await (API TMDB)
+- i18n: FR/EN/AR + placeholders + RTL (ar)
+- Export: PDF via jsPDF
+
+Fin.
+

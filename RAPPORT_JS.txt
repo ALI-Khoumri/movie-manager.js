@@ -1,0 +1,332 @@
+RAPPORT – Explication du JavaScript (version simple / débutant)
+==============================================================
+
+Projet: MovieManager
+Fichier JS principal: `app.js`
+
+Objectif de ce rapport
+----------------------
+Expliquer clairement:
+- chaque fonctionnalité (auth, CRUD, favoris, archives, dashboard, i18n, PDF)
+- où elle se trouve dans `app.js`
+- comment tout “s’enchaîne” (événements → fonctions → stockage → affichage)
+
+IMPORTANT: Les numéros de lignes peuvent changer si tu modifies le fichier, mais les TITRES/SECTIONS restent les mêmes.
+
+
+1) Structure de `app.js` (les grandes sections)
+-----------------------------------------------
+`app.js` est découpé en sections (avec des commentaires “====”):
+
+1) Configuration + état global
+2) Helpers DOM
+3) i18n (traductions)
+4) Store (LocalStorage)
+5) API TMDB (async/await)
+6) Auth + UI commun
+7) Page: index.html (login)
+8) Page: dashboard.html
+9) Page: movies.html
+10) Démarrage (entrypoint)
+
+
+2) Les données stockées (LocalStorage)
+--------------------------------------
+Tout le stockage est centralisé dans l’objet `store` (section “4) Store”).
+
+Clés utilisées:
+- `currentUser` : utilisateur connecté (ex: { username: "admin" })
+- `favorites` : tableau d’IDs de films favoris (ex: [123, 456])
+- `archived` : tableau d’IDs de films archivés (ex: [789])
+- `customMovies` : tableau d’objets films créés par l’utilisateur
+
+Pourquoi c’est utile:
+- Les données restent après refresh
+- Le CRUD (create/update/delete) se fait sur `customMovies`
+- Favoris/archives sont juste des listes d’IDs
+
+
+3) i18n (Internationalisation) – FR/EN/AR
+----------------------------------------
+Où: section “3) i18n (traductions)”
+
+Ce que ça fait:
+- `state.lang` contient la langue courante (valeur dans localStorage “language”)
+- `i18n.t(key)` retourne la traduction d’une clé (ex: `i18n.t("movies")`)
+- `i18n.apply()` applique les traductions au DOM:
+  - tous les éléments `data-i18n="..."` → remplace le texte
+  - tous les éléments `data-i18n-placeholder="..."` → remplace le placeholder
+  - met `<html dir="rtl">` si arabe (sinon ltr)
+- `i18n.setLang(lang)` met à jour la langue + sauvegarde + applique
+
+Déclencheur:
+- `initLanguageSelector(onChange)` (section “6) Auth + UI commun”)
+  écoute le `change` du select `#languageSelect`.
+
+Impact:
+- Sur dashboard, le `onChange` relance `loadDashboard()`
+- Sur movies, le `onChange` relance `loadMovies()` (et relit le mode favoris/archives)
+
+
+4) Authentification (login)
+---------------------------
+Où:
+- Vérification: `enforceAuth()` (section “6) Auth + UI commun”)
+- Formulaire login: `initLoginPage()` (section “7) Page: index.html (login)”)
+- Logout: `initLogout()` (section “6) Auth + UI commun”)
+
+Comment ça marche:
+- Au chargement (`DOMContentLoaded`), on exécute `enforceAuth()`.
+  - si l’utilisateur n’est pas connecté et qu’on n’est pas sur `index.html`,
+    on redirige vers `index.html`.
+
+Login:
+- `initLoginPage()` écoute `submit` sur `#loginForm`
+- vérifie `admin/admin`
+  - OK → `store.setCurrentUser({ username })` puis redirect `dashboard.html`
+  - KO → affiche l’erreur dans `#loginError` (texte via i18n)
+
+Logout:
+- `initLogout()` écoute `click` sur `#logoutBtn`
+- supprime `currentUser` puis redirect `index.html`
+
+
+5) API TMDB (films populaires + recherche) – async/await
+-------------------------------------------------------
+Où: section “5) API TMDB (async/await)”
+
+Fonctions:
+- `fetchPopularMovies(page)`
+- `searchMovies(query, page)`
+- (interne) `fetchMoviesFromTmdb(url)`
+
+Ce que ça renvoie:
+Une liste de films normalisés (objets JS):
+- `id`, `title`, `description`, `releaseDate`, `rating`, `language`, `poster`, `isFromTMDB:true`
+
+Notes:
+- La langue TMDB dépend de `state.lang` via `toTmdbLocale(lang)`
+- Si erreur réseau → retourne `[]` et log console
+
+
+6) Dashboard (statistiques + graphiques)
+----------------------------------------
+Page: `dashboard.html`
+Où: section “8) Page: dashboard.html”
+
+Fonctions clés:
+- `initDashboardPage()`
+- `loadDashboard()`
+- `updateDashboardStats(movies)`
+- `renderDashboardCharts(movies)`
+- `destroyCharts()`, `addChart(id, config)`
+
+Comment ça marche (flux):
+1) `initDashboardPage()`:
+   - initialise le sélecteur de langue: `initLanguageSelector(loadDashboard)`
+   - appelle `loadDashboard()` une première fois
+
+2) `loadDashboard()`:
+   - récupère les films populaires: `fetchPopularMovies(1)`
+   - récupère les films custom: `store.customMovies`
+   - fusionne les listes, puis filtre les archivés (ids dans `store.archived`)
+   - envoie la liste finale à:
+     - `updateDashboardStats(all)`
+     - `renderDashboardCharts(all)`
+
+3) `updateDashboardStats(all)` met à jour:
+   - total films
+   - films populaires (isFromTMDB)
+   - archivés (taille de store.archived)
+   - favoris (taille de store.favorites)
+   - note moyenne
+
+4) `renderDashboardCharts(all)`:
+   - détruit les anciens charts (`destroyCharts`) pour éviter doublons
+   - calcule:
+     - films par année (releaseDate)
+     - langues (language)
+     - distribution des notes
+   - crée 5 charts Chart.js (bar/pie/line/doughnut/bar)
+
+
+7) Movies page (liste + recherche + pagination)
+----------------------------------------------
+Page: `movies.html`
+Où: section “9) Page: movies.html”
+
+Fonctions clés:
+- `initMoviesPage()`
+- `readMoviesModeFromUrl()`
+- `loadMovies()`
+- affichage:
+  - `renderMoviesGrid(movies)`
+  - `renderPagination()`
+
+Modes (via URL):
+- `movies.html` → mode normal (on cache les archivés)
+- `movies.html?favorites=true` → montre uniquement les favoris
+- `movies.html?archived=true` → montre uniquement les archivés
+
+Comment ça marche:
+1) `initMoviesPage()`:
+   - init i18n: `initLanguageSelector(...)`
+   - lit le mode via URL: `readMoviesModeFromUrl()`
+   - installe les listeners:
+     - recherche (input debounce)
+     - bouton sauvegarde film
+     - export PDF
+     - actions des cartes (event delegation)
+     - pagination
+   - appelle `loadMovies()`
+
+2) `loadMovies()`:
+   - affiche un spinner
+   - récupère la recherche `q` depuis `#searchInput`
+   - récupère la liste TMDB:
+     - si `q` existe → `searchMovies(q, state.currentPage)`
+     - sinon → `fetchPopularMovies(state.currentPage)`
+   - récupère les films custom `store.customMovies`
+     - si `q` existe, filtre aussi les custom (titre/description)
+   - fusionne TMDB + custom
+   - applique le mode:
+     - favoris → garde les films dont l’id est dans `store.favorites`
+     - archives → garde les films dont l’id est dans `store.archived`
+     - normal → enlève les films dont l’id est dans `store.archived`
+   - stocke la liste finale dans `state.lastMovies`
+   - affiche:
+     - `renderMoviesGrid(all)`
+     - `renderPagination()`
+
+Pagination:
+- `renderPagination()` affiche “Précédent / Page X / Suivant”
+- au clic sur un lien pagination (`a[data-page]`):
+  - met à jour `state.currentPage`
+  - relance `loadMovies()`
+
+Recherche:
+- au `input` sur `#searchInput`, on attend 400ms puis:
+  - `state.currentPage = 1`
+  - `loadMovies()`
+
+
+8) CRUD des films (Create / Update / Delete)
+--------------------------------------------
+Page: `movies.html`
+Où: section “9) Page: movies.html”
+
+IMPORTANT:
+- Le CRUD complet (modifier/supprimer) est disponible seulement pour les films “custom”
+  (ceux créés dans l’application). Les films TMDB sont “read-only”.
+
+Create / Update:
+- Formulaire modal: `#movieModal` / `#movieForm`
+- Bouton enregistrer: `#saveMovieBtn` → appelle `saveMovieFromForm()`
+
+Fonction `saveMovieFromForm()`:
+1) vérifie la validité HTML5 du formulaire (`checkValidity()`)
+2) construit un objet film:
+   - title, description, releaseDate, rating, language, poster
+   - `isFromTMDB: false`
+3) si `movieId` existe → UPDATE (remplace l’objet correspondant)
+4) sinon → CREATE (push avec `id: Date.now()`)
+5) sauvegarde via `store.customMovies = custom`
+6) ferme le modal + reset le form + `loadMovies()`
+
+Delete:
+- bouton sur une carte custom (icône poubelle) → action `delete`
+- fonction `deleteMovie(id)`:
+  - confirme
+  - supprime du customMovies
+  - supprime l’id des favoris + archives
+  - relance `loadMovies()`
+
+Edit:
+- bouton sur une carte custom (icône crayon) → action `edit`
+- fonction `openEditModal(id)`:
+  - charge le film custom
+  - remplit les champs du formulaire
+  - change le titre du modal (i18n: “Modifier le film”)
+  - ouvre le modal bootstrap
+
+
+9) Favoris + Archives
+---------------------
+Où: section “9) Page: movies.html”
+
+Favoris:
+- bouton étoile → action `toggleFav`
+- fonction `toggleFavorite(id)`:
+  - ajoute/enlève l’id dans `store.favorites`
+  - relance `loadMovies()`
+
+Archives:
+- bouton archive → action `archive`
+- bouton désarchiver → action `unarchive`
+
+Fonctions:
+- `archiveMovie(id)`:
+  - confirm
+  - ajoute l’id à `store.archived`
+  - relance `loadMovies()`
+
+- `unarchiveMovie(id)`:
+  - confirm
+  - enlève l’id de `store.archived`
+  - relance `loadMovies()`
+
+
+10) Détails + Export PDF
+-----------------------
+Où: section “9) Page: movies.html”
+
+Détails:
+- bouton “œil” → action `view`
+- fonction `viewDetails(id)`:
+  - retrouve le film (dans `state.lastMovies` ou `store.customMovies`)
+  - remplit le modal détails (`#movieDetailModal`)
+  - stocke l’id du film dans `#exportPdfBtn.dataset.movieId`
+
+PDF:
+- bouton `#exportPdfBtn` → `exportDetailPdf()`
+- utilise `window.jspdf.jsPDF`
+- met les informations du film dans un PDF, puis `doc.save(...)`
+- libellés traduits via `i18n.t("pdfDescription")`, etc.
+
+
+11) Event delegation (bonne pratique DOM)
+-----------------------------------------
+Où: section “9) Page: movies.html” dans `initMoviesPage()`
+
+Principe:
+- au lieu d’avoir 10 listeners ou du `onclick` dans le HTML,
+  on met UN seul listener sur `#moviesContainer`.
+
+Comment:
+- au clic, on cherche le bouton le plus proche:
+  `button[data-action]`
+- on récupère:
+  - `data-action` (view/edit/delete/archive/unarchive/toggleFav)
+  - `data-id` (id du film)
+- on appelle la bonne fonction.
+
+Résultat:
+- code plus court
+- plus facile à comprendre/maintenir
+
+
+12) Démarrage (comment l’appli décide quoi lancer)
+-------------------------------------------------
+Où: section “10) Démarrage (entrypoint)”
+
+Au `DOMContentLoaded`:
+1) `enforceAuth()`
+2) `initSidebarToggle()`
+3) détecte la page:
+   - index → `initLoginPage()`
+   - dashboard → `initDashboardPage()`
+   - movies → `initMoviesPage()`
+4) active `initLogout()` (pour les pages dashboard/movies)
+
+Fin du rapport.
+
