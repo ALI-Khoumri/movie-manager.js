@@ -1,9 +1,6 @@
 # MovieManager (Projet JS)
 
-## Identifiants
 
-- **Utilisateur**: `admin`
-- **Mot de passe**: `admin`
 
 ## Fonctionnalités (alignées avec l’évaluation)
 
